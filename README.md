@@ -34,6 +34,7 @@ ${IMAGE_TAG} \
    
 ### start Jumpserver
 #Jumpserver 安装
+shell '''
 export Node_Name=Jumpserver
 export Data_Path=/data/docker_${Node_Name}
 export MEMORY_SIZE=4096
@@ -63,3 +64,4 @@ docker run -d --name ${Node_Name} --hostname ${Node_Name} \
 ${IMAGE_TAG}
 
 docker logs --tail 30 -f ${Node_Name}
+'''
