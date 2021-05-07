@@ -80,7 +80,7 @@ docker exec -it Jumpserver /bin/bash -c "/bin/bash /opt/config/soft/add_host.sh 
 
 ### 配置说明
 ```
-SSH_KEY base64 ssh私钥(cat /root/.ssh/id_rsa |base64 |tr -d '\n')
+SSH_KEY base64ssh私钥 (cat /root/.ssh/id_rsa |base64 |tr -d '\n')
 SSH_KEY_SIZE ssh私钥size
 JMS_URL jumpserver外网地址 api添加主机使用
 GUCAMOLE_URL VNC远程
