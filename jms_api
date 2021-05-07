@@ -1,0 +1,45 @@
+#JMSAPI地址
+export Jms_Url=JMS_URL
+export JMS_User=${JMS_USER:-"devops"}
+export JMS_Pass=${JMS_PASS:-"Devops_Admin"}
+#超级管理员UUID
+export Admin_User=${ADMIN_USER:-"297701d4-64db-4173-9258-898e4143293c"}
+
+#Token信息
+export Token=${TOKEN:-"$(curl -sfkL -X POST ${Jms_Url}/api/v1/authentication/auth/ -H 'Content-Type: application/json' -d "{\"username\": \"${JMS_User}\", \"password\": \"${JMS_Pass}\"}"|awk -F '"' '{print $4}')"}
+#JMS资产机器IP地址
+export SSH_IP=${SSH_IP:-"$(ip route get $(ip route | grep "default" | awk '{print $3}' ) |grep src  | sed 's/.*src \(.*\)$/\1/g' | sed 's/\(.*\) uid.*$/\1/g' | sed 's/ //g')"}
+#JMS资产机器SSH端口
+export SSH_PORT=${SSH_PORT:-"$(ss -tunlp |grep ssh |awk '{print $5}'|awk -F ':' '{print $2}'|head -n 1)"}
+#JMS资产机器分组
+export Host_Group=${1:-"QA环境/$(hostname -s |tr -d '[0-9]')"}
+#JMS资产机器名称
+export ASSETS_NAME=${2:-"$(hostname -s)"}
+
+#节点信息
+export Node_UUID=$(curl -sfkL -X GET "${Jms_Url}/api/v1/assets/nodes/tree/"  \
+   -H  "accept: application/json" \
+   -H  "Content-Type: application/json"  \
+   -H "Authorization: Bearer ${Token}" \
+|python -m json.tool |grep -C 2 '"name": "Default"' |grep 'id' |awk '{print $2}' |tr -d '",')
+
+echo -----------------------------------------------------------------------------------------
+curl  -sfkL -X POST "${Jms_Url}/api/v1/assets/assets/"  \
+    -H  "accept: application/json" \
+    -H  "Content-Type: application/json" \
+    -H "Authorization: Bearer ${Token}" -d \
+"{
+    \"hostname\": \"${ASSETS_NAME}-$(echo ${SSH_IP}|tr '.' '-')\",
+    \"ip\": \"${SSH_IP}\",
+    \"protocols\": [
+        \"ssh/${SSH_PORT:-"22"}\"
+    ],
+    \"public_ip\": \"\",
+    \"nodes\":[\"${Node_UUID}\"],
+    \"admin_user\": \"${Admin_User}\",
+    \"platform\": \"Linux\",
+    \"nodes_display\": [
+        \"/Default/${Host_Group}\"
+    ]
+}" |python -m json.tool
+echo -----------------------------------------------------------------------------------------

@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+#jumpserver Init By:liuwei Mail:al6008@163.com 
+test -e /opt/config/api_init && exit 0
+
+
+#wait supervisord
+while [ ! -e /dev/shm/supervisord.pid ]
+do
+    sleep 5
+done
+
+#runnig
+supervisorctl status |awk '{print $2}' |sort  |uniq -c |wc -l
+while [ $(supervisorctl status |awk '{print $2}' |sort  |uniq -c |wc -l) -eq 2 ]
+do
+   sleep 5
+   supervisorctl status |grep FATAL |awk '{print $1}' |xargs -r -i supervisorctl start {}
+done
+
+
+#DevOps
+export API_PASS=${API_PASS:-$(dd if=/dev/urandom bs=64 count=1 2>/dev/null | base64 | tr -d "=+/" | dd bs=32 count=1 2>/dev/null)}
+#supervisord user
+export User_File=/opt/config/supervisord.dat
+sleep 5
+mkdir -p $(dirname "${User_File}")
+if [ -e "${User_File}" ];then
+  export SUPERVISOR_PASSWORD=$(cat "${User_File}" |awk -F':' '{print $2}')
+fi
+/usr/bin/expect << EOF
+set timeout 30
+spawn /usr/local/bin/python /opt/jumpserver/apps/manage.py changepassword admin
+expect {
+    "Password" { send "$SUPERVISOR_PASSWORD\r"; exp_continue}
+    "Password (again)" { send "$SUPERVISOR_PASSWORD\r"; exp_continue}
+    eof { exit }
+}
+EOF
+
+
+#JMSAPI地址
+export Jms_Url=http://127.0.0.1
+export JMS_User=admin
+export JMS_Pass=${SUPERVISOR_PASSWORD}
+#Token信息
+export Token=$(curl -sfkL -X POST ${Jms_Url}/api/v1/authentication/auth/ -H 'Content-Type: application/json' -d "{\"username\": \"${JMS_User}\", \"password\": \"${JMS_Pass}\"}"|awk -F '"' '{print $4}')
+
+#超级管理员
+Admin_UUID=$(curl  -sfkL -X POST "${Jms_Url}/api/v1/assets/admin-users/"  \
+    -H  "accept: application/json" \
+    -H  "Content-Type: application/json" \
+    -H "Authorization: Bearer ${Token}" -d \
+"{
+    \"name\": \"Administrator\",
+    \"username\": \"root\",
+    \"private_key\": \"$(cat /opt/config/id_rsa|tr '\n' '#' |sed 's@#@\\n@g' |sed 's@\\n$@@')\"
+}" |python -m json.tool|grep -w id |awk '{print $2}'|tr -d '",'|head -n 1)
+
+
+
+#系统管理员
+SYSTEM_UUID=$(curl  -sfkL -X POST "${Jms_Url}/api/v1/assets/system-users/"  \
+    -H  "accept: application/json" \
+    -H  "Content-Type: application/json" \
+    -H "Authorization: Bearer ${Token}" -d \
+"{
+    \"name\": \"Administrator\",
+    \"username\": \"root\",
+    \"private_key\": \"$(cat /opt/config/id_rsa|tr '\n' '#' |sed 's@#@\\n@g' |sed 's@\\n$@@')\"
+}" |python -m json.tool|grep -w id |awk '{print $2}'|tr -d '",'|head -n 1)
+
+
+
+
+
+#创建默认Nodes
+# curl  -sfkL -X POST "${Jms_Url}/api/v1/assets/nodes/"  \
+#     -H  "accept: application/json" \
+#     -H  "Content-Type: application/json" \
+#     -H "Authorization: Bearer ${Token}" -d \
+# "{
+#     \"name\": \"Default\"
+# }"
+
+curl -sfkL -X GET "${Jms_Url}/api/v1/assets/nodes/children/tree/?assets=0"  \
+   -H  "accept: application/json" \
+   -H  "Content-Type: application/json"  \
+   -H "Authorization: Bearer ${Token}" \
+|python -m json.tool &>/dev/null
+
+
+#节点信息
+export Node_UUID=$(curl -sfkL -X GET "${Jms_Url}/api/v1/assets/nodes/tree/"  \
+   -H  "accept: application/json" \
+   -H  "Content-Type: application/json"  \
+   -H "Authorization: Bearer ${Token}" \
+|python -m json.tool |grep -C 3 '"name": "Default"' |grep 'id' |awk '{print $2}' |tr -d '",')
+
+#登陆用户
+export User_UUID=$(curl -sfkL -X GET "${Jms_Url}/api/v1/users/users/"  \
+   -H  "accept: application/json" \
+   -H  "Content-Type: application/json"  \
+   -H "Authorization: Bearer ${Token}" \
+|python -m json.tool |grep -C 3 '"name": "Administrator"' |grep 'id' |awk '{print $2}' |tr -d '",')
+
+
+#使用用户
+export System_User_UUID=$(curl -sfkL -X GET "${Jms_Url}/api/v1/assets/system-users/"  \
+   -H  "accept: application/json" \
+   -H  "Content-Type: application/json"  \
+   -H "Authorization: Bearer ${Token}" \
+|python -m json.tool |grep -C 3 '"name": "Administrator"' |grep 'id' |awk '{print $2}' |tr -d '",')
+
+#创建授权
+curl  -sfkL -X POST "${Jms_Url}/api/v1/perms/asset-permissions/"  \
+    -H  "accept: application/json" \
+    -H  "Content-Type: application/json" \
+    -H "Authorization: Bearer ${Token}" -d \
+"{
+    \"name\": \"Administrator\",
+    \"is_active\": true,
+    \"actions\": [
+        \"all\"
+    ],
+    \"date_expired\": \"2221-08-08T08:08:08.620Z\",
+    \"date_start\": \"2020-08-08T08:08:08.620Z\",
+    \"comment\": \"Administrator\",
+    \"users\": [
+        \"${User_UUID}\"
+    ],
+    \"nodes\": [
+        \"${Node_UUID}\"
+    ],
+    \"system_users\": [
+        \"${System_User_UUID}\"
+    ]
+}" |python -m json.tool
+
+
+
+
+#创建API账号
+curl -sfkL -X POST "${Jms_Url}/api/v1/users/users/"  \
+    -H  "accept: application/json" \
+    -H  "Content-Type: application/json" \
+    -H "Authorization: Bearer ${Token}" -d \
+"{
+    \"name\": \"DevOPS\",
+    \"username\": \"devops\",
+    \"password\": \"${API_PASS}\",
+    \"email\": \"devops@devops.com\",
+    \"role\": \"Admin\",
+    \"org_roles\": [\"Admin\"]
+}" |python -m json.tool
+
+echo -------------------------------------------------------------
+echo ${Admin_UUID}
+echo ${API_PASS}
+sed -i "/export JMS_Pass/s@export JMS_Pass=.*@export JMS_Pass=${API_PASS}@g" /opt/config/soft/add_key.sh
+sed -i "/export Admin_User=/s@export Admin_User=.*@export Admin_User=\${ADMIN_USER:-\"${Admin_UUID}\"}@g" /opt/config/soft/add_key.sh
+
+sed -i "/export JMS_Pass/s@export JMS_Pass=.*@export JMS_Pass=${API_PASS}@g" /opt/config/soft/add_host.sh
+sed -i "/export Admin_User=/s@export Admin_User=.*@export Admin_User=\${ADMIN_USER:-\"${Admin_UUID}\"}@g" /opt/config/soft/add_host.sh
+grep -E "JMS_Pass|Admin_User" /opt/config/soft/add_key.sh
+echo -------------------------------------------------------------
+/bin/bash /opt/config/soft/add_host.sh core/devops jumpserver 127.0.0.1 22 yes
+echo done > /opt/config/api_init
+exit 0
+
