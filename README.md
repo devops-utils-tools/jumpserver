@@ -1,10 +1,9 @@
-# jumpserver
-
 ### Build
-
+```
 docker build --compress --build-arg VERSION=${VERSION} -t ${IMAGE_TAG} ./
-
+```
 ### Start DB
+```
 export Node_Name=PostGreSQL-9.6.16
 export Data_Path=/data/docker_${Node_Name}
 export MEMORY_SIZE=2048
@@ -31,15 +30,14 @@ docker run -d --name ${Node_Name} --hostname ${Node_Name} \
 ${IMAGE_TAG} \
    -c 'shared_buffers=256MB' \
    -c 'max_connections=512'
-   
-### start Jumpserver
+```
 
+### Start Jumpserver
 ```
 export Node_Name=Jumpserver
 export Data_Path=/data/docker_${Node_Name}
 export MEMORY_SIZE=4096
 export IMAGE_TAG=devopsutilstools/jumpserver:v2.9.2
-
 
 docker stop ${Node_Name} &>/dev/null
 docker rm -f ${Node_Name} &>/dev/null
@@ -64,4 +62,27 @@ docker run -d --name ${Node_Name} --hostname ${Node_Name} \
 ${IMAGE_TAG}
 
 docker logs --tail 30 -f ${Node_Name}
+```
+### 等待服务完全启动成功 第一次启动 5分钟左右
+```
+docker exec -it Jumpserver /bin/bash -c "supervisorctl status"
+```
+
+### 打开网页
+```
+http://IP:8080 账号密码 (docker exec -it Jumpserver /bin/bash -c "/opt/config/supervisord.dat")
+```
+
+### 快速添加主机 
+```
+docker exec -it Jumpserver /bin/bash -c "/bin/bash /opt/config/soft/add_host.sh 资源分组 主机名称 ip地址 端口"
+```
+
+### 配置说明
+```
+SSH_KEY base64 ssh私钥(cat /root/.ssh/id_rsa |base64 |tr -d '\n')
+SSH_KEY_SIZE ssh私钥size
+JMS_URL jumpserver外网地址 api添加主机使用
+GUCAMOLE_URL VNC远程
+DB_* 数据库配置
 ```
